@@ -65,7 +65,7 @@ public class Main {
             }
         }
         File userCacheFile = new File("usercache.json");
-        if (!worldFile.exists() || !worldFile.canRead() || !worldFile.isFile()) {
+        if (!userCacheFile.exists() || !userCacheFile.canRead() || !userCacheFile.isFile()) {
             System.err.println("usercache.json 不存在/無法讀取/不是檔案");
             return false;
         }
@@ -94,12 +94,12 @@ public class Main {
         if (userName == null) {
             if (isOfflineUUID(fileNameWithoutExtension)) {
                 System.out.println("[" + file.getParentFile().getName() + "] " + fileNameWithoutExtension + "已經是離線的UUID，自動跳過");
+                return;
             } else {
                 userName = getUserNameFromUUID(fileNameWithoutExtension);
                 onlineUserInfoList.put(fileNameWithoutExtension, userName);
                 System.out.println("[" + file.getParentFile().getName() + "] 線上玩家列表中沒有找到名稱為[" + fileNameWithoutExtension + "]的UUID，自動轉換: " + userName);
             }
-            return;
         }
         String newUUID = offlineUserInfoList.get(userName);
         if (newUUID == null) {
