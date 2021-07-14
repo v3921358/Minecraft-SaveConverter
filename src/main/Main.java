@@ -116,8 +116,10 @@ public class Main {
     private void loadOnlineUserInfo(JSONArray userList) {
         userList.stream().map(obj -> (JSONObject) obj).forEachOrdered(json -> {
             String userName = json.getString("name"), uuid = json.getString("uuid");
-            onlineUserInfoList.put(uuid, userName);
-            System.out.println("[online] name: " + userName + " uuid: " + uuid);
+            if (!isOfflineUUID(uuid)) {
+                onlineUserInfoList.put(uuid, userName);
+                System.out.println("[online] name: " + userName + " uuid: " + uuid);
+            }
         });
     }
 
