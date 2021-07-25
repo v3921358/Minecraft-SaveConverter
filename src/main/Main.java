@@ -10,7 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.net.ssl.HttpsURLConnection;
@@ -28,6 +30,7 @@ public class Main {
     private final String[] directorys = {"advancements", "playerdata", "stats"};
     private final Map<String, String> onlineUserInfoList = new HashMap();
     private final Map<String, String> offlineUserInfoList = new HashMap();
+    private List<String> nonExistUUIDList = new ArrayList<>();
 
     public void startConvert(String worldName) {
         if (!canConvert(worldName)) {
@@ -39,13 +42,20 @@ public class Main {
         } catch (IOException ex) {
             FileUtil.printError("Main.txt", "startConvert", ex, "轉換過程中發生錯誤 worldName: " + worldName);
         }
+        System.out.println("轉換完成");
+        if (nonExistUUIDList.isEmpty()) {
+            return;
+        }
+        System.out.println("共有" + nonExistUUIDList.size() + "個UUID無法轉換:");
+        nonExistUUIDList.forEach(uuid -> {
+            System.out.println(uuid);
+        });
     }
 
     private void loadUserInfo() {
         String content = FileUtil.read("usercache.json");
         JSONArray userList = JSONObject.parseArray(content);
-        loadOnlineUserInfo(userList);
-        loadOfflineUserInfo(userList);
+        loadUserInfo(userList);
     }
 
     private boolean canConvert(String worldName) {
@@ -90,22 +100,26 @@ public class Main {
     private void doConvertFile(File file) throws IOException {
         String fileName = file.getName();
         String fileNameWithoutExtension = fileName.substring(0, fileName.indexOf("."));
-        String userName = onlineUserInfoList.get(fileNameWithoutExtension);
-        if (userName == null) {
-            if (isOfflineUUID(fileNameWithoutExtension)) {
-                System.out.println("[" + file.getParentFile().getName() + "] " + fileNameWithoutExtension + "已經是離線的UUID，自動跳過");
-                return;
-            } else {
-                userName = getUserNameFromUUID(fileNameWithoutExtension);
-                onlineUserInfoList.put(fileNameWithoutExtension, userName);
-                System.out.println("[" + file.getParentFile().getName() + "] 線上玩家列表中沒有找到名稱為[" + fileNameWithoutExtension + "]的UUID，自動轉換: " + userName);
-            }
+        String userName = offlineUserInfoList.get(fileNameWithoutExtension);
+
+        if (!isOfflineUUID(fileNameWithoutExtension)) {
+            System.out.println("[" + file.getParentFile().getName() + "] " + fileNameWithoutExtension + "已經是線上的UUID，自動跳過");
+            return;
         }
-        String newUUID = offlineUserInfoList.get(userName);
+
+        if (userName == null) {
+            if (!nonExistUUIDList.contains(fileNameWithoutExtension)) {
+                nonExistUUIDList.add(fileNameWithoutExtension);
+                System.err.println("[" + file.getParentFile().getName() + "] 線下玩家列表中沒有找到UUID為[" + fileNameWithoutExtension + "]的人物，自動跳過");
+            }
+            return;
+        }
+
+        String newUUID = onlineUserInfoList.get(userName);
         if (newUUID == null) {
-            newUUID = getOfflineUUID(userName).toString();
-            offlineUserInfoList.put(userName, newUUID);
-            System.out.println("[" + file.getParentFile().getName() + "] 線下玩家列表中沒有找到名稱為[" + fileNameWithoutExtension + "]的UUID，自動轉換為:" + newUUID);
+            newUUID = getUUIDFromUserName(userName);
+            onlineUserInfoList.put(userName, newUUID);
+            System.out.println("[" + file.getParentFile().getName() + "] 線上玩家列表中沒有找到名稱為[" + userName + "]的人物，自動轉換: " + newUUID);
         }
         String fileExtension = FileUtil.getExtension(fileName);
         Path source = Paths.get(file.getCanonicalPath());
@@ -113,21 +127,16 @@ public class Main {
         System.out.println("[" + file.getParentFile().getName() + "] 角色[" + userName + "] UUID已成功轉換為" + newUUID);
     }
 
-    private void loadOnlineUserInfo(JSONArray userList) {
+    private void loadUserInfo(JSONArray userList) {
         userList.stream().map(obj -> (JSONObject) obj).forEachOrdered(json -> {
-            String userName = json.getString("name"), uuid = json.getString("uuid");
-            if (!isOfflineUUID(uuid)) {
-                onlineUserInfoList.put(uuid, userName);
-                System.out.println("[online] name: " + userName + " uuid: " + uuid);
+            String userNameFromJson = json.getString("name"), uuidFromJson = json.getString("uuid");
+            if (isOfflineUUID(uuidFromJson)) {
+                offlineUserInfoList.put(uuidFromJson, userNameFromJson);
+                System.out.println("[offline] name: " + userNameFromJson + " uuid: " + uuidFromJson);
+            } else {
+                onlineUserInfoList.put(userNameFromJson, uuidFromJson);
+                System.out.println("[online] name: " + userNameFromJson + " uuid: " + uuidFromJson);
             }
-        });
-    }
-
-    private void loadOfflineUserInfo(JSONArray userList) {
-        userList.stream().map(obj -> (JSONObject) obj).map(json -> json.getString("name")).forEachOrdered(userName -> {
-            String uuid = getOfflineUUID(userName).toString();
-            offlineUserInfoList.put(userName, uuid);
-            System.out.println("[offline] name: " + userName + " uuid: " + uuid);
         });
     }
 
@@ -136,6 +145,15 @@ public class Main {
             return false;
         }
         return uuid.substring(14, 15).equals("3");
+    }
+
+    private String getUUIDFromUserName(String userName) {
+        String uuidWithoutSymbol = JSONObject.parseObject(postUrl("https://api.mojang.com/users/profiles/minecraft/" + userName, "")).getString("id");
+        return uuidWithoutSymbol.substring(0, 8)
+                + "-" + uuidWithoutSymbol.substring(8, 12)
+                + "-" + uuidWithoutSymbol.substring(12, 16)
+                + "-" + uuidWithoutSymbol.substring(16, 20)
+                + "-" + uuidWithoutSymbol.substring(20, uuidWithoutSymbol.length());
     }
 
     private String getUserNameFromUUID(String uuid) {
